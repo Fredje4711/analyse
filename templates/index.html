@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="nl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloedanalyse Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"> <!-- NIEUWE REGEL -->
+</head>
+
+<body>
+    <h1>Bloedanalyse Interpretatie Tool</h1>
+
+    <div>
+        <label for="pdfFile">Kies een PDF-bloedanalyse:</label>
+        <input type="file" id="pdfFile" name="pdfFile" accept=".pdf">
+    </div>
+
+    <br>
+
+    <div>
+        <button id="analyzeButton">Analyseer PDF</button>
+    </div>
+
+    <hr>
+
+    <h2>Resultaten:</h2>
+    <div id="resultsArea">
+        <p>Upload een PDF om de resultaten hier te zien.</p>
+        <!-- De resultaten worden hier later door JavaScript ingevoegd -->
+    </div>
+
+    <!-- Later voegen we hier een link naar script.js toe -->
+    <!-- Voor nu doen we het JavaScript direct in de HTML voor eenvoud -->
+        <!-- Aan het einde van je body, vervang het vorige script blok -->
+
+        <script>
+            const pdfFileInput = document.getElementById('pdfFile');
+            const analyzeButton = document.getElementById('analyzeButton');
+            const resultsArea = document.getElementById('resultsArea');
+
+            analyzeButton.addEventListener('click', async () => {
+                resultsArea.innerHTML = '<p>Bezig met analyseren...</p>';
+                const file = pdfFileInput.files[0];
+
+                if (!file) {
+                    resultsArea.innerHTML = '<p style="color: red;">Selecteer alstublieft eerst een PDF-bestand.</p>';
+                    return;
+                }
+                if (file.type !== "application/pdf") {
+                    resultsArea.innerHTML = '<p style="color: red;">Ongeldig bestandstype. Selecteer een PDF.</p>';
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('pdfFile', file);
+
+                try {
+                    const response = await fetch('/analyze', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log("Ontvangen data van backend:", data);
+
+                        if (data.error) {
+                             resultsArea.innerHTML = `<p style="color: red;">Fout van server: ${data.error}</p>`;
+                             return;
+                        }
+                        
+                        // Bouw de HTML voor de resultaten
+                        let htmlOutput = '<h3>Analyse Resultaten:</h3>';
+                        
+                        if (Object.keys(data).length === 0) {
+                            htmlOutput += '<p>Geen markers gevonden of kunnen parsen in deze PDF.</p>';
+                        } else {
+                            htmlOutput += '<table>';
+                            htmlOutput += `
+                                <tr>
+                                    <th>Test</th>
+                                    <th>Waarde</th>
+                                    <th>Eenheid</th>
+                                    <th>Referentie</th>
+                                    <th>Interpretatie</th>
+                                </tr>
+                            `;
+                            // Sorteer de markers op display_naam voor een consistente volgorde
+                            const sortedMarkers = Object.values(data).sort((a, b) => {
+                                const nameA = a.display_naam || "";
+                                const nameB = b.display_naam || "";
+                                return nameA.localeCompare(nameB);
+                            });
+
+                            for (const markerData of sortedMarkers) {
+                                // Veilig toegang krijgen tot properties, met fallbacks
+                                const displayName = markerData.display_naam || 'N/A';
+                                const patientValue = markerData.waarde !== null && markerData.waarde !== undefined ? markerData.waarde : markerData.waarde_ruw_str || 'N/A';
+                                const unit = markerData.eenheid || 'N/A';
+                                const refRaw = markerData.referentie_geparsed ? markerData.referentie_geparsed.raw_string || '' : markerData.referentie_ruw || '';
+                                let interpretation = markerData.interpretatie || 'N/A';
+                                
+                                // Kleurcodering voor interpretatie (simpel voorbeeld)
+                                let interpClass = '';
+                                if (interpretation.toLowerCase().includes('verhoogd')) {
+                                    interpClass = 'verhoogd';
+                                } else if (interpretation.toLowerCase().includes('verlaagd')) {
+                                    interpClass = 'verlaagd';
+                                } else if (interpretation.toLowerCase().includes('normaal')) {
+                                    interpClass = 'normaal';
+                                }
+
+                                htmlOutput += `
+                                    <tr>
+                                        <td>${displayName}</td>
+                                        <td>${patientValue}</td>
+                                        <td>${unit}</td>
+                                        <td>${refRaw}</td>
+                                        <td class="${interpClass}">${interpretation}</td>
+                                    </tr>
+                                `;
+                            }
+                            htmlOutput += '</table>';
+                        }
+                        resultsArea.innerHTML = htmlOutput;
+
+                    } else {
+                        let errorText = `Fout van server: ${response.status} ${response.statusText}`;
+                        try {
+                            const errorData = await response.json();
+                            if (errorData && errorData.error) {
+                                errorText = `Fout van server: ${errorData.error}`;
+                            }
+                        } catch (e) { /* ignore */ }
+                        resultsArea.innerHTML = `<p style="color: red;">${errorText}</p>`;
+                        console.error('Server error:', response);
+                    }
+                } catch (error) {
+                    resultsArea.innerHTML = '<p style="color: red;">Fout bij het versturen of verwerken van het request. Controleer de console.</p>';
+                    console.error('Error:', error);
+                }
+            });
+        </script>
+    </body>
+    </html>
